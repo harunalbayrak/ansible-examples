@@ -1,0 +1,9 @@
+---
+- hosts: host1, host2
+  become: true
+  tasks:
+  - name: Git config settings to make non interactive git clone
+    community.general.git_config:
+      name: core.sshCommand
+      scope: global
+      value: 'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no'
