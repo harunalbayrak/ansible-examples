@@ -1,0 +1,93 @@
+---
+- name: Playbook to install Zookeeper
+  hosts: all
+  become: true
+  tasks:
+  - name: "Install java"
+    ansible.builtin.apt:
+      name: openjdk-11-jdk
+      state: latest
+      update_cache: yes
+
+  - name: Add hosts to the hosts file
+    lineinfile:
+      dest: /etc/hosts
+      line: "{{ item.line }}"
+    loop:
+      - { line: '10.8.129.206 host1' }
+      - { line: '10.8.134.88 host2' }
+      - { line: '10.8.129.72 host3' }
+
+  - name: Unarchive zookeper
+    unarchive:
+      src: https://dlcdn.apache.org/zookeeper/zookeeper-3.7.1/apache-zookeeper-3.7.1-bin.tar.gz
+      dest: /opt
+      remote_src: yes
+      mode: 0777
+
+  - name: Check if directory exists
+    stat:
+      path: /opt/zookeeper
+    register: result
+
+  - name: Delete /opt/zookeeper if directory exists
+    command: rm -rf /opt/zookeeper
+    when: (result.stat.isdir is defined) and (result.stat.isdir)
+
+  - name: Change directory name
+    command: mv -f /opt/apache-zookeeper-3.7.1-bin /opt/zookeeper
+  
+  - name: Create zoo.cfg file
+    ansible.builtin.file:
+      path: /opt/zookeeper/conf/zoo.cfg
+      state: touch
+      mode: 0777
+
+  - name: Configure zoo.cfg
+    lineinfile:
+      dest: /opt/zookeeper/conf/zoo.cfg
+      line: "{{ item.line }}"
+    loop:
+      - { line: 'tickTime=2000' }
+      - { line: 'dataDir=/data/zookeeper' }
+      - { line: 'clientPort=2181' }
+      - { line: 'initLimit=10' }
+      - { line: 'syncLimit=5' }
+      - { line: 'server.1=host1:2888:3888' }
+      - { line: 'server.2=host2:2888:3888' }
+      - { line: 'server.3=host3:2888:3888' }
+
+  - name: Create /data directory if it does not exist
+    ansible.builtin.file:
+      path: /data
+      state: directory
+      mode: '0777'
+
+  - name: Create /data/zookeeper directory if it does not exist
+    ansible.builtin.file:
+      path: /data/zookeeper
+      state: directory
+      mode: '0777'
+
+  - name: Chown command
+    command: chown ubuntu:ubuntu /data/zookeeper
+
+  - name: Create myid file
+    ansible.builtin.file:
+      path: /data/zookeeper/myid
+      state: touch
+      mode: '0777'
+  
+  - name: Configure myid file
+    lineinfile:
+      dest: /data/zookeeper/myid
+      line: "{{ var }}"
+
+  - name: Run zookeeper
+    command: /opt/zookeeper/bin/zkServer.sh start
+    register: result
+
+  - name: Print zookeeper status
+    debug:
+      msg: "Log: {{ result.stdout }}"
+       
