@@ -1,0 +1,28 @@
+---
+- name: Configure Logs
+  hosts: all
+  become: yes
+  become_user: root
+  tasks:
+    - name: Change log level from DEBUG to INFO (monasca-api)
+      ansible.builtin.replace:
+        path: /etc/monasca-api/api-logging.conf
+        regexp: '^(level = DEBUG)$'
+        replace: 'level = INFO'
+      notify: 
+      - Restart devstack@monasca-api
+  
+    - name: Change log level from DEBUG to INFO (monasca-agent)
+      ansible.builtin.replace:
+        path: /etc/monasca/agent/agent.yaml
+        regexp: '^(  log_level: DEBUG)$'
+        replace: '  log_level: INFO'
+      notify: 
+      - Restart monasca-agent.target
+
+  handlers:
+  - name: Restart devstack@monasca-api
+    service: name=devstack@monasca-api state=restarted
+
+  - name: Restart monasca-agent.target
+    service: name=monasca-agent.target state=restarted

@@ -1,0 +1,133 @@
+---
+- name: VM initialization
+  hosts: all
+  become: yes
+  become_user: stack
+  vars:
+    host_ip: 10.8.133.45 
+  vars_prompt:
+    - name: username
+      prompt: Bitbucket username
+      private: no
+
+    - name: password
+      prompt: Bitbucket password
+      private: yes
+
+  tasks:
+    - name: Change git ssl verify config
+      command: git config --global http.sslVerify false
+  
+    - name: Git checkout
+      become_user: root
+      ansible.builtin.git:
+        repo: 'https://{{ username }}:{{ password }}@bitbucket.bilgem.tubitak.gov.tr/scm/sb/safir_gocmen.git'
+        dest: /etc/safir_gocmen
+
+    - name: Copy safirgocmen config
+      become_user: root
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      with_items:
+        - src: "safirgocmen/safir_gocmen.conf.j2"
+          dest: "/etc/safir_gocmen/safir_gocmen.conf"
+        - src: "safirgocmen/api_paste.ini.j2"
+          dest: "/etc/safir_gocmen/api_paste.ini"
+        - src: "safirgocmen/apache_safir_gocmen.conf.j2"
+          dest: "/etc/apache2/sites-available/safir_gocmen.conf"
+        - src: "safirgocmen/safirgocmen-processor.service.j2"
+          dest: "/etc/systemd/system/safirgocmen-processor.service"
+
+    - name: Create /var/log/safir_gocmen directory if it does not exist
+      become_user: root
+      ansible.builtin.file:
+        path: /var/log/safir_gocmen
+        state: directory
+        owner: stack
+        group: stack
+    
+    - name: Create /var/www/safir_gocmen directory if it does not exist
+      become_user: root
+      ansible.builtin.file:
+        path: /var/www/safir_gocmen
+        state: directory
+        owner: stack
+        group: stack
+
+    - name: Drop database safir_gocmen if it exists
+      community.mysql.mysql_query:
+        query: DROP DATABASE IF EXISTS safir_gocmen
+    
+    - name: Create database safir_gocmen
+      community.mysql.mysql_query:
+        query: CREATE DATABASE safir_gocmen
+
+    - name: Get project id of admin
+      community.mysql.mysql_query:
+        login_db: keystone
+        query: SELECT id FROM project WHERE name="admin"
+      register: result_query
+
+    - name: Project id
+      debug:
+        msg: "{{ result_query.query_result[0] | map(attribute='id') | join(',') }}" 
+
+    - name: "Set variables"
+      set_fact:
+        project_id: "{{ result_query.query_result[0] | map(attribute='id') | join(',') }}"
+
+    - name: Copy safirgocmen config
+      become_user: root
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      with_items:
+        - src: "admin-openrc.sh.j2"
+          dest: "/opt/stack/admin-openrc.sh"
+    
+    - name: Source devstack/accrc/admin/admin
+      shell: bash -c "source /opt/stack/devstack/accrc/admin/admin"
+
+    - name: Source devstack/openrc
+      shell: bash -c "source /opt/stack/devstack/openrc"
+    
+    - name: Openstack create safir_gocmen user
+      command: bash -c "source /opt/stack/admin-openrc.sh && openstack user create safir_gocmen --password secret --email safir_gocmen@localhost"
+      ignore_errors: yes
+
+    - name: Openstack add role to the safir_gocmen user
+      command: bash -c "source /opt/stack/admin-openrc.sh && openstack role add --project service --user safir_gocmen admin"
+      ignore_errors: yes
+      
+    - name: Openstack create safir_gocmen service
+      command: bash -c "source /opt/stack/admin-openrc.sh && openstack service create gocmen --name safir_gocmen --description 'OpenStack Migratory Service'"
+      ignore_errors: yes
+
+    - name: Openstack create endpoint public
+      command: bash -c "source /opt/stack/admin-openrc.sh && openstack endpoint create gocmen --region RegionOne public http://{{ host_ip }}:9757"
+      ignore_errors: yes
+    
+    - name: Openstack create endpoint admin
+      command: bash -c "source /opt/stack/admin-openrc.sh && openstack endpoint create gocmen --region RegionOne admin http://{{ host_ip }}:9757"
+      ignore_errors: yes
+    
+    - name: Openstack create endpoint internal
+      command: bash -c "source /opt/stack/admin-openrc.sh && openstack endpoint create gocmen --region RegionOne internal http://{{ host_ip }}:9757"
+      ignore_errors: yes
+
+    - name: Copy file with owner and permissions
+      ansible.builtin.copy:
+        src: /etc/safir_gocmen/safir_gocmen/api/app.wsgi
+        dest: /var/www/safir_gocmen/
+        remote_src: yes
+
+    - name: a2ensite command
+      command: sudo a2ensite safir_gocmen.conf
+      notify:
+        - Restart apache
+
+  handlers:
+    - name: Restart apache
+      become_user: root
+      service: name=apache2 state=reloaded 

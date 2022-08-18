@@ -1,0 +1,12 @@
+[Unit]
+Description = Devstack devstack@safirgocmen-processor.service
+
+[Service]
+ExecReload = /usr/bin/kill -HUP $MAINPID
+TimeoutStopSec = 300
+KillMode = process
+ExecStart = /opt/stack/.local/bin/safirgocmen-processor --config-file=/etc/safir_gocmen/safir_gocmen.conf --log-file=/var/log/safir_gocmen/safirgocmen-processor.log
+User = stack
+
+[Install]
+WantedBy = multi-user.target
