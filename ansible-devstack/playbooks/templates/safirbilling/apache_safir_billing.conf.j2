@@ -1,0 +1,15 @@
+Listen 9764
+
+<VirtualHost *:9764>
+    WSGIDaemonProcess safirbilling-api processes=2 threads=10 user=stack display-name=%{GROUP}
+    WSGIProcessGroup safirbilling-api
+    WSGIScriptAlias / /var/www/safirbilling/app.wsgi
+    WSGIApplicationGroup %{GLOBAL}
+    <IfVersion >= 2.4>
+        ErrorLogFormat "%{cu}t %M"
+    </IfVersion>
+    ErrorLog /var/log/apache2/safirbilling_error.log
+    CustomLog /var/log/apache2/safirbilling_access.log combined
+</VirtualHost>
+
+WSGISocketPrefix /var/run/apache2

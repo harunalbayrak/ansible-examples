@@ -30,6 +30,29 @@
         name: python-is-python3
         state: present
 
+    - name: Update and upgrade apt packages
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400 #One day
+
+    - name: Install packages
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - iptables
+        - arptables
+        - ebtables
+
+    - name: Run commands
+      command: "{{ item }}"
+      loop:
+        - "update-alternatives --set iptables /usr/sbin/iptables-legacy"
+        - "update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy"
+        - "update-alternatives --set arptables /usr/sbin/arptables-legacy"
+        - "update-alternatives --set ebtables /usr/sbin/ebtables-legacy"
+
 - name: DevStack setup as 'stack' user
   hosts: all
   become: yes
@@ -42,14 +65,14 @@
       git:
         repo: https://opendev.org/openstack/devstack
         dest: /opt/stack/devstack
-        version: stable/victoria
+        version: "{{ openstack_branch }}"
       environment:
         - GIT_SSL_NO_VERIFY: "true"
 
     - name: Copy file with configuration
       copy:
-        src: ./devstack/local.conf
-        dest: /opt/stack/devstack/local.conf
+        src: "../devstack/{{ local_conf_file }}"
+        dest: "/opt/stack/devstack/local.conf"
 
     - name: Test if DevStack is installed by checking /opt/stack/tempest existence
       shell:
@@ -72,3 +95,18 @@
       register: devstack_output
 
     - debug: var=devstack_output.stdout_lines
+
+    - name: Pip install requirements of skyline-console
+      ansible.builtin.pip:
+        requirements: /opt/stack/skyline-console/requirements.txt
+
+    - name: Pip install requirements of skyline-apiserver
+      ansible.builtin.pip:
+        requirements: /opt/stack/skyline-apiserver/requirements.txt
+      notify:
+        - Restart devstack@skyline.service
+
+  handlers:
+    - name: Restart devstack@skyline.service
+      become_user: root
+      service: name=devstack@skyline.service state=restarted

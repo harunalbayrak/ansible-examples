@@ -1,0 +1,12 @@
+[Unit]
+Description = Devstack devstack@safirbilling.service
+
+[Service]
+ExecReload = /usr/bin/kill -HUP $MAINPID
+TimeoutStopSec = 300
+KillMode = process
+ExecStart = /opt/stack/.local/bin/safirbilling-processor --config-file /etc/safirbilling/safirbilling.conf --log-file /var/log/safirbilling/safirbilling_processor.log
+User = stack
+
+[Install]
+WantedBy = multi-user.target

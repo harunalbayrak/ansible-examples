@@ -1,1 +1,1 @@
-host1 ansible_ssh_host=10.8.133.45 ansible_user=ubuntu ansible_ssh_private_key_file=/Users/bilgem/Development/.secrets/keypair1.pem
+host0 ansible_ssh_host=sdf ansible_user=dsv ansible_ssh_private_key_file=213 local_conf_file=local0-deneme.conf

@@ -1,0 +1,206 @@
+---
+- name: Playbook to install Kafka
+  hosts: all
+  become: true
+  tasks:
+  - name: "Install java"
+    ansible.builtin.apt:
+      name: openjdk-8-jdk-headless
+      state: latest
+      update_cache: yes
+
+  - name: Add hosts to the hosts file
+    lineinfile:
+      dest: /etc/hosts
+      line: "{{ item.line }}"
+    loop:
+      - { line: '10.8.129.206 host1' }
+      - { line: '10.8.134.88 host2' }
+      - { line: '10.8.129.72 host3' }
+
+  - name: Unarchive kafka
+    unarchive:
+      src: https://downloads.apache.org/kafka/3.2.1/kafka_2.12-3.2.1.tgz
+      dest: /opt
+      remote_src: yes
+      mode: 0777
+
+  - name: Check if directory exists
+    stat:
+      path: /opt/kafka
+    register: result
+
+  - name: Delete /opt/kafka if directory exists
+    command: rm -rf /opt/kafka
+    when: (result.stat.isdir is defined) and (result.stat.isdir)
+
+  - name: Change directory name
+    command: mv -f /opt/kafka_2.12-3.2.1 /opt/kafka
+
+  - name: Create zookeeper.properties
+    ansible.builtin.file:
+      path: /opt/kafka/config/zookeeper.properties
+      state: touch
+      mode: '0777'
+
+  - name: Configure zookeeper properties 
+    lineinfile:
+      dest: /opt/kafka/config/zookeeper.properties
+      line: "{{ item.line }}"
+    loop:
+      - { line: 'tickTime=6000' }
+      - { line: 'dataDir=/data/zookeeper' }
+      - { line: 'clientPort=2181' }
+      - { line: 'initLimit=10' }
+      - { line: 'syncLimit=5' }
+      - { line: 'server.1=host1:2888:3888' }
+      - { line: 'server.2=host2:2888:3888' }
+      - { line: 'server.3=host3:2888:3888' }
+
+  - name: Create /data directory if it does not exist
+    ansible.builtin.file:
+      path: /data
+      state: directory
+      mode: '0777'
+
+  - name: Create /data/kafka directory if it does not exist
+    ansible.builtin.file:
+      path: /data/kafka
+      state: directory
+      mode: '0777'
+  
+  - name: Create /data/kafka/log directory if it does not exist
+    ansible.builtin.file:
+      path: /data/kafka/log
+      state: directory
+      mode: '0777'
+
+  - name: Chown command
+    command: chown ubuntu:ubuntu /data/kafka/
+
+  - name: Create /data/zookeeper directory if it does not exist
+    ansible.builtin.file:
+      path: /data/zookeeper
+      state: directory
+      mode: '0777'
+
+  - name: Chown command
+    command: chown ubuntu:ubuntu /data/zookeeper
+
+  - name: Create myid file
+    ansible.builtin.file:
+      path: /data/zookeeper/myid
+      state: touch
+      mode: '0777'
+
+  - name: Configure myid file
+    lineinfile:
+      dest: /data/zookeeper/myid
+      line: "{{ var }}"
+
+  - name: Configure server.properties
+    lineinfile:
+      dest: /opt/kafka/config/server.properties
+      line: "{{ item.line }}"
+    loop:
+      - { line: 'log.dirs=/data/kafka/log' }
+      - { line: 'num.partitions=3' }
+      - { line: 'zookeeper.connect=host1:2181,host2:2181,host3:2181' }
+
+  - name: Add broker.id to the server.properties
+    lineinfile:
+      dest: /opt/kafka/config/server.properties
+      line: "{{ broker_id }}"
+
+  - name: Create zookeeper.service file
+    ansible.builtin.file:
+      path: /etc/systemd/system/zookeeper.service
+      state: touch
+      mode: '0777'
+  
+  - name: Create kafka.service file
+    ansible.builtin.file:
+      path: /etc/systemd/system/kafka.service
+      state: touch
+      mode: '0777'
+
+  - name: Create zookeeper as a service
+    lineinfile:
+      dest: /etc/systemd/system/zookeeper.service
+      line: "{{ item.line }}"
+    loop:
+      - { line: '[Unit]' }
+      - { line: 'Description=Zookeeper' }
+      - { line: 'Wants=network-online.target' }
+      - { line: 'After=network-online.target' }
+      - { line: '' }
+      - { line: '[Service]' }
+      - { line: 'User=root' }
+      - { line: 'Group=root' }
+      - { line: 'Restart=on-failure' }
+      - { line: 'RestartSec=5s' }
+      - { line: 'ExecStart=sudo /opt/kafka/bin/zookeeper-server-start.sh /opt/kafka/config/zookeeper.properties' }
+      - { line: 'Environment="KAFKA_HEAP_OPTS=-Xmx3G -Xms3G -' }
+      - { line: 'XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/logs/mps -' }
+      - { line: 'XX:+CrashOnOutOfMemoryError"' }
+      - { line: '' }
+      - { line: '[Install]' }
+      - { line: 'WantedBy=multi-user.target' }
+
+  - name: Reload daemon
+    command: systemctl daemon-reload
+
+  - name: Start zookeeper service
+    command: systemctl start zookeeper.service
+
+  - name: Enable zookeeper service
+    command: systemctl enable zookeeper.service
+
+  - name: Status zookeeper service
+    command: systemctl status zookeeper.service
+    register: status
+
+  - name: Print zookeeper service status
+    debug:
+      msg: "Status: {{ status.stdout }}"
+  
+  - name: Create kafka as a service
+    lineinfile:
+      dest: /etc/systemd/system/kafka.service
+      line: "{{ item.line }}"
+    loop:
+      - { line: '[Unit]' }
+      - { line: 'Description=Kafka' }
+      - { line: 'Wants=network-online.target' }
+      - { line: 'After=network-online.target' }
+      - { line: '' }
+      - { line: '[Service]' }
+      - { line: 'User=root' }
+      - { line: 'Group=root' }
+      - { line: 'Type=simple' }
+      - { line: 'Restart=on-failure' }
+      - { line: 'RestartSec=5s' }
+      - { line: 'ExecStart=sudo /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties' }
+      - { line: 'Environment="KAFKA_HEAP_OPTS=-Xmx8G -Xms8G -' }
+      - { line: 'XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/logs/mps -' }
+      - { line: 'XX:+CrashOnOutOfMemoryError"' }
+      - { line: '' }
+      - { line: '[Install]' }
+      - { line: 'WantedBy=multi-user.target' }
+
+  - name: Reload daemon
+    command: systemctl daemon-reload
+
+  - name: Start kafka service
+    command: systemctl start kafka.service
+
+  - name: Enable kafka service
+    command: systemctl enable kafka.service
+
+  - name: Status kafka service
+    command: systemctl status kafka.service
+    register: status
+
+  - name: Print kafka service status
+    debug:
+      msg: "Status: {{ status.stdout }}"

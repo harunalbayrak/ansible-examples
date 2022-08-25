@@ -1,0 +1,83 @@
+[DEFAULT]
+debug = True
+notification_topics = notifications
+transport_url = rabbit://stackrabbit:admin@{{ ansible_ssh_host }}:5672/
+
+[database]
+connection = mysql+pymysql://root:admin@{{ ansible_ssh_host }}/safirbilling
+
+[licence_checker]
+backend = safir_cloud_watcher
+
+[licence_checker_auth]
+auth_section = ks_auth
+
+[collect]
+services = compute
+collector = monasca
+
+[nova_operator]
+auth_section = ks_auth
+
+[monasca_collector]
+auth_section = ks_auth
+interface = internal
+service_name = monasca
+
+[keystone_fetcher]
+keystone_version = 3
+auth_section = ks_auth
+
+[keystone_authtoken]
+auth_section = ks_auth
+
+[project_fetcher]
+backend = keystone
+
+[ks_auth]
+memcached_servers = localhost:11211
+www_authenticate_uri = http://{{ ansible_ssh_host }}/identity
+project_domain_id = default
+project_name = admin
+user_domain_id = default
+auth_url = http://{{ ansible_ssh_host }}/identity
+auth_type = password
+region_name = RegionOne
+service_token_roles_required = True
+service_token_roles = admin
+password = admin
+username = admin
+
+[oslo_messaging_amqp]
+
+[oslo_messaging_qpid]
+
+[oslo_messaging_rabbit]
+ssl = False
+
+[oslo_messaging_notifications]
+transport_url = rabbit://stackrabbit:admin@{{ ansible_ssh_host }}:5672/
+
+[billing]
+method = 'prepaid'
+currency = 'TL'
+termination_time_limit = 15
+suspension_limit = -100
+warning_limit = 100
+notification_limit = 900
+private_group = ['gold'] # All group type : gold, silver, normal
+staff_group = ['silver'] # All group type : gold, silver, normal
+
+[email_notifier]
+email_host = smtp.domain.com
+email_port = 587
+email_host_user = system.admin@domain.com
+email_host_password = secret
+email_use_tls = True
+email_admin_user = system.admin@domain.com
+
+[general]
+attempt_number = 5
+delay_time = 60
+mail_attempt_number = 5
+redirect_url = http://{{ ansible_ssh_host }}/creditload

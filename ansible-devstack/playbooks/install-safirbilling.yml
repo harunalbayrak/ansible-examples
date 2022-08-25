@@ -1,0 +1,131 @@
+---
+- name: VM initialization
+  hosts: all
+  become: yes
+  become_user: stack
+  tasks:
+    - name: Change git ssl verify config
+      command: git config --global http.sslVerify false
+  
+    - name: Create /etc/safirbilling directory if it does not exist
+      become_user: root
+      ansible.builtin.file:
+        path: /etc/safirbilling
+        state: directory  
+
+    - name: Git checkout
+      # become_user: root
+      ansible.builtin.git:
+        repo: 'https://{{ username }}:{{ password }}@bitbucket.bilgem.tubitak.gov.tr/scm/sb/safirbilling.git'
+        dest: /opt/stack/safir_billing
+        version: master
+      environment:
+        - GIT_SSL_NO_VERIFY: "true"
+
+    - name: Copy safirbilling config
+      become_user: root
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      with_items:
+        - src: "safirbilling/safirbilling.conf.j2"
+          dest: "/etc/safirbilling/safirbilling.conf"
+        - src: "safirbilling/api_paste.ini.j2"
+          dest: "/etc/safirbilling/api_paste.ini"
+        - src: "safirbilling/apache_safir_billing.conf.j2"
+          dest: "/etc/apache2/sites-available/safir_billing.conf"
+        - src: "safirbilling/safirbilling-processor.service.j2"
+          dest: "/etc/systemd/system/safirbilling-processor.service"
+
+    - name: Create "{{ item }}"  directory if it does not exist
+      become_user: root
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: stack
+        group: stack
+      loop:
+        - /var/log/safirbilling
+        - /var/www/safirbilling
+        - /var/lib/safirbilling
+
+    - name: Drop database safirbilling if it exists
+      community.mysql.mysql_query:
+        query: DROP DATABASE IF EXISTS safirbilling
+    
+    - name: Create database safirbilling
+      community.mysql.mysql_query:
+        query: CREATE DATABASE safirbilling
+
+    - name: Get project id of admin
+      community.mysql.mysql_query:
+        login_db: keystone
+        query: SELECT id FROM project WHERE name="admin"
+      register: result_query
+
+    - name: Project id
+      debug:
+        msg: "{{ result_query.query_result[0] | map(attribute='id') | join(',') }}" 
+
+    - name: "Set variables"
+      set_fact:
+        project_id: "{{ result_query.query_result[0] | map(attribute='id') | join(',') }}"
+
+    - name: Copy safirbilling config
+      become_user: root
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+      with_items:
+        - src: "admin-openrc.sh.j2"
+          dest: "/opt/stack/admin-openrc.sh"
+    
+    - name: Openstack create safirbilling user
+      command: bash -c "source /opt/stack/devstack/openrc && source /opt/stack/admin-openrc.sh && openstack user create safirbilling --password admin --email safir_billing@localhost"
+      ignore_errors: yes
+
+    - name: Openstack add role to the safirbilling user
+      command: bash -c "source /opt/stack/devstack/openrc && source /opt/stack/admin-openrc.sh && openstack role add --project service --user safirbilling admin"
+      ignore_errors: yes
+      
+    - name: Openstack create safirbilling service
+      command: bash -c "source /opt/stack/devstack/openrc && source /opt/stack/admin-openrc.sh && openstack service create billing --name safirbilling --description 'OpenStack Migratory Service'"
+      ignore_errors: yes
+
+    - name: Openstack create endpoint "{{ item }}"
+      command: bash -c "source /opt/stack/devstack/openrc && source /opt/stack/admin-openrc.sh && openstack endpoint create billing --region RegionOne {{ item }} http://{{ ansible_ssh_host }}:9764"
+      ignore_errors: yes
+      loop:
+        - public
+        - admin
+        - internal
+    
+    - name: Copy file with owner and permissions
+      ansible.builtin.copy:
+        src: /opt/stack/safir_billing/safirbilling/api/app.wsgi
+        dest: /var/www/safirbilling/
+        remote_src: yes
+
+    - name: a2ensite command
+      command: sudo a2ensite safir_billing.conf
+      notify:
+        - Restart apache
+
+    - name: Requirements of safirbilling pip
+      ansible.builtin.pip:
+        requirements: /opt/stack/safir_billing/requirements.txt
+
+    - name: Pip install . command
+      ansible.builtin.pip:
+        name: /opt/stack/safir_billing
+      notify:
+        - Start safirbilling
+
+  handlers:
+    - name: Restart apache
+      become_user: root
+      service: name=apache2 state=reloaded
+    
+    - name: Start safirbilling
+      become_user: root
+      service: name=safirbilling-processor.service state=started
